@@ -1,0 +1,44 @@
+from collections.abc import Callable, Sequence
+
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages.utils import count_tokens_approximately, trim_messages
+
+from app.schemas.chat import ChatMessage
+
+
+TokenCounter = Callable[[Sequence[BaseMessage]], int]
+
+
+class MessageBudgetExceeded(ValueError):
+    """Raised when the latest user message alone exceeds the history budget."""
+
+
+def to_langchain_messages(messages: list[ChatMessage]) -> list[BaseMessage]:
+    converted: list[BaseMessage] = []
+    for message in messages:
+        if message.role == "user":
+            converted.append(HumanMessage(content=message.content))
+        else:
+            converted.append(AIMessage(content=message.content))
+    return converted
+
+
+def trim_history(
+    messages: list[BaseMessage],
+    max_tokens: int,
+    token_counter: TokenCounter = count_tokens_approximately,
+) -> list[BaseMessage]:
+    latest = messages[-1]
+    if token_counter([latest]) > max_tokens:
+        raise MessageBudgetExceeded("latest user message exceeds history token budget")
+
+    trimmed = trim_messages(
+        messages,
+        strategy="last",
+        token_counter=token_counter,
+        max_tokens=max_tokens,
+        start_on="human",
+        end_on="human",
+        allow_partial=False,
+    )
+    return list(trimmed)
