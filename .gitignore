@@ -14,7 +14,7 @@ dist/
 htmlcov/
 .mypy_cache/
 .ruff_cache/
-evals/*_results.json
+**/evals/*_results.json
 .vscode/
 .idea/
 .DS_Store
