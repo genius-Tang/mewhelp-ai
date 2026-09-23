@@ -18,6 +18,7 @@
 - Execute zero or one tool per request. Reject multiple tool calls and finalize with the original model without bound tools.
 - Keep order/product/logistics data mocked; do not add their tables or call real external APIs.
 - Keep FAQ retrieval as literal SQL `LIKE`; the “邮费是多少” miss is required evidence, not a bug to hide.
+- Treat the user-supplied four-table DDL as authoritative: preserve its unsigned IDs, Chinese ENUM values, field widths, timestamps, indexes, comments, and non-cascading foreign keys in SQL and ORM mappings.
 - Do not add an Agent/AgentExecutor loop, RAG, vector search, Redis, auth, rate limiting, Alembic, or a separate Agent API.
 - Use TDD for every testable backend behavior. Prompt/data changes use the labeled evaluation set. The chat page alone uses the approved Vibe Coding exception.
 - Append `dev-notes/ch02.md` immediately after workspace baseline, every task, real capability probe, evaluation, browser QA, review, and finish. Record observed commands/results and all rework.
@@ -274,8 +275,16 @@ def test_message_trace_columns_are_present() -> None:
     assert table.c.tool_call_id.nullable is True
 
 
+def test_timestamp_and_width_columns_match_the_authoritative_ddl() -> None:
+    assert {"created_at", "updated_at"} <= set(Conversation.__table__.c)
+    assert {"created_at", "updated_at"} <= set(Faq.__table__.c)
+    assert Conversation.__table__.c.user_id.type.length == 64
+    assert Message.__table__.c.tool_call_id.type.length == 64
+
+
 def test_ticket_number_is_the_ticket_primary_key() -> None:
     assert [column.name for column in Ticket.__table__.primary_key.columns] == ["ticket_no"]
+    assert Ticket.__table__.c.ticket_no.type.length == 32
 ```
 
 - [ ] **Step 3: Verify RED**
@@ -323,7 +332,7 @@ def create_session_factory(
     return async_sessionmaker(engine, expire_on_commit=False)
 ```
 
-Implement the four mapped classes with the exact names/types/nullability/FKs from the spec. Use `JSON` for `Message.tool_calls`, `DateTime(timezone=False)` with `server_default=func.current_timestamp(6)`, `ondelete="CASCADE"` for messages, and `ondelete="RESTRICT"` for tickets.
+Implement the four mapped classes with the exact names/types/nullability/FKs from the user-supplied DDL now recorded in the spec. Use MySQL unsigned `BIGINT`, native MySQL `ENUM`, `JSON` for `Message.tool_calls`, `DateTime(timezone=False)` with database defaults, and no ORM `ondelete` action for either foreign key.
 
 - [ ] **Step 5: Add Docker and SQL initialization**
 
@@ -361,51 +370,51 @@ Create `001-schema.sql`:
 ```sql
 SET NAMES utf8mb4;
 
-CREATE TABLE faq (
-  id BIGINT NOT NULL AUTO_INCREMENT,
-  question VARCHAR(500) NOT NULL,
-  answer TEXT NOT NULL,
-  category VARCHAR(100) NOT NULL,
-  PRIMARY KEY (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE conversations (
-  id BIGINT NOT NULL AUTO_INCREMENT,
-  user_id VARCHAR(128) NOT NULL,
-  status VARCHAR(32) NOT NULL DEFAULT 'active',
-  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '会话主键',
+  user_id VARCHAR(64) NOT NULL COMMENT '用户标识',
+  status ENUM('进行中','已转人工','已结束') NOT NULL DEFAULT '进行中' COMMENT '处理状态',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '开启时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (id),
-  INDEX ix_conversations_user_id (user_id),
-  CONSTRAINT ck_conversations_status CHECK (status IN ('active', 'transferred', 'closed'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  KEY idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='客服会话';
 
 CREATE TABLE messages (
-  id BIGINT NOT NULL AUTO_INCREMENT,
-  conversation_id BIGINT NOT NULL,
-  role VARCHAR(16) NOT NULL,
-  content TEXT NULL,
-  tool_calls JSON NULL,
-  tool_call_id VARCHAR(128) NULL,
-  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '消息主键',
+  conversation_id BIGINT UNSIGNED NOT NULL COMMENT '所属会话',
+  role ENUM('user','assistant','tool') NOT NULL COMMENT '角色:用户/助手/工具结果',
+  content TEXT NULL COMMENT '消息正文,assistant 纯工具调用时可为空',
+  tool_calls JSON NULL COMMENT 'assistant 消息带的工具调用申请单',
+  tool_call_id VARCHAR(64) NULL COMMENT 'tool 消息对应的申请单 id,回灌时对号入座',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '产生时间',
   PRIMARY KEY (id),
-  INDEX ix_messages_conversation_order (conversation_id, created_at, id),
-  CONSTRAINT fk_messages_conversation FOREIGN KEY (conversation_id)
-    REFERENCES conversations (id) ON DELETE CASCADE,
-  CONSTRAINT ck_messages_role CHECK (role IN ('user', 'assistant', 'tool'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  KEY idx_conversation_id (conversation_id),
+  CONSTRAINT fk_messages_conversation FOREIGN KEY (conversation_id) REFERENCES conversations (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='会话消息流水';
+
+CREATE TABLE faq (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'FAQ 主键',
+  question VARCHAR(512) NOT NULL COMMENT '问题',
+  answer TEXT NOT NULL COMMENT '答案',
+  category VARCHAR(64) NOT NULL COMMENT '分类',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (id),
+  KEY idx_category (category)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='常见问答';
 
 CREATE TABLE tickets (
-  ticket_no VARCHAR(40) NOT NULL,
-  conversation_id BIGINT NOT NULL,
-  description TEXT NOT NULL,
-  ticket_type VARCHAR(64) NOT NULL,
-  status VARCHAR(32) NOT NULL DEFAULT 'open',
-  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  ticket_no VARCHAR(32) NOT NULL COMMENT '工单号,如 T20260701008',
+  conversation_id BIGINT UNSIGNED NOT NULL COMMENT '关联会话,可倒查当时聊了什么',
+  description TEXT NOT NULL COMMENT '问题描述',
+  ticket_type ENUM('售后','投诉','咨询') NOT NULL COMMENT '工单类型',
+  status ENUM('待处理','已处理') NOT NULL DEFAULT '待处理' COMMENT '处理状态',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (ticket_no),
-  INDEX ix_tickets_conversation_id (conversation_id),
-  CONSTRAINT fk_tickets_conversation FOREIGN KEY (conversation_id)
-    REFERENCES conversations (id) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  KEY idx_conversation_id (conversation_id),
+  CONSTRAINT fk_tickets_conversation FOREIGN KEY (conversation_id) REFERENCES conversations (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='人工工单';
 ```
 
 Create `002-seed.sql` with refund, exchange, membership, invoice, and these acceptance rows:
@@ -525,7 +534,7 @@ Every method opens its own `async with self._session_factory() as session`. Writ
 statement = select(Faq).where(Faq.question.like(f"%{keyword}%")).order_by(Faq.id).limit(1)
 ```
 
-`list_replay_messages` selects `role == "user"` or assistant rows with non-empty content and `tool_calls IS NULL`, ordered by `(created_at, id)`. `create_ticket` locks or loads the conversation, inserts a server-generated `T`-prefixed identifier, and sets status to `transferred` in the same transaction.
+`list_replay_messages` selects `role == "user"` or assistant rows with non-empty content and `tool_calls IS NULL`, ordered by `(created_at, id)`. `create_ticket` locks or loads the conversation, inserts a server-generated `T`-prefixed identifier of at most 32 characters, and sets status to `已转人工` in the same transaction.
 
 - [ ] **Step 5: Verify focused and full GREEN**
 
@@ -604,7 +613,7 @@ Use explicit `args_schema` for the three mock queries and the repository-backed 
 @tool
 async def create_ticket(
     description: str,
-    ticket_type: Literal["售后", "投诉", "咨询", "其他"],
+    ticket_type: Literal["售后", "投诉", "咨询"],
     conversation_id: Annotated[int, InjectedToolArg],
 ) -> dict[str, Any]:
     """Create a human-service ticket only when the user explicitly requests follow-up."""
@@ -799,7 +808,7 @@ Use stripped fields with these limits:
 
 ```python
 class ChatRequest(BaseModel):
-    user_id: str = Field(min_length=1, max_length=128)
+    user_id: str = Field(min_length=1, max_length=64)
     message: str = Field(min_length=1, max_length=4000)
     conversation_id: int | None = Field(default=None, gt=0)
 ```

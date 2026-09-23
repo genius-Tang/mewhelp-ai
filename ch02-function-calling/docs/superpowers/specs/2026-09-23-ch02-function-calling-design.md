@@ -112,33 +112,36 @@ FAQ 测试数据。DDL 与 seed 显式使用 `utf8mb4`，避免中文数据乱�
 
 ### 5.1 `faq`
 
-- `id`: `BIGINT` 自增主键。
-- `question`: `VARCHAR(500)`，不可空。
+- `id`: `BIGINT UNSIGNED` 自增主键。
+- `question`: `VARCHAR(512)`，不可空。
 - `answer`: `TEXT`，不可空。
-- `category`: `VARCHAR(100)`，不可空。
+- `category`: `VARCHAR(64)`，不可空并建立索引。
+- `created_at`: `DATETIME`，数据库生成。
+- `updated_at`: `DATETIME`，数据库生成并在更新时自动刷新。
 
 `query_faq` 只执行 `question LIKE :pattern`，其中 pattern 为 `%原始关键词%`。不做分词、
 同义词改写、全文索引、向量检索或回退搜索。
 
 ### 5.2 `conversations`
 
-- `id`: `BIGINT` 自增主键。
-- `user_id`: `VARCHAR(128)`，不可空并建立索引。
-- `status`: `VARCHAR(32)`，默认 `active`，允许 `active`、`transferred`、`closed`。
-- `created_at`: `DATETIME(6)`，数据库生成。
+- `id`: `BIGINT UNSIGNED` 自增主键。
+- `user_id`: `VARCHAR(64)`，不可空并建立索引。
+- `status`: `ENUM('进行中','已转人工','已结束')`，默认 `进行中`。
+- `created_at`: `DATETIME`，数据库生成。
+- `updated_at`: `DATETIME`，数据库生成并在更新时自动刷新。
 
 续接会话时必须同时按 `id` 和 `user_id` 查找；不存在或不属于当前用户均按“会话不存在”
 处理，避免跨用户读取历史。
 
 ### 5.3 `messages`
 
-- `id`: `BIGINT` 自增主键。
+- `id`: `BIGINT UNSIGNED` 自增主键。
 - `conversation_id`: 外键关联 `conversations.id`，不可空并建立索引。
-- `role`: `VARCHAR(16)`，只允许 `user`、`assistant`、`tool`。
+- `role`: `ENUM('user','assistant','tool')`。
 - `content`: `TEXT`，可空；工具申请型 assistant 消息可能没有文本内容。
 - `tool_calls`: `JSON`，可空；保存模型返回的标准化工具申请数组。
-- `tool_call_id`: `VARCHAR(128)`，可空；tool 消息用于关联申请。
-- `created_at`: `DATETIME(6)`，数据库生成并建立会话内排序索引。
+- `tool_call_id`: `VARCHAR(64)`，可空；tool 消息用于关联申请。
+- `created_at`: `DATETIME`，数据库生成；`conversation_id` 单列索引用于会话查询。
 
 正常工具轮次的落库顺序为：user → 带 `tool_calls` 的 assistant → tool → 最终 assistant。
 无工具轮次只保存 user → 最终 assistant。跨轮组装历史时只回放 user 与最终 assistant；
@@ -146,14 +149,15 @@ FAQ 测试数据。DDL 与 seed 显式使用 `utf8mb4`，避免中文数据乱�
 
 ### 5.4 `tickets`
 
-- `ticket_no`: `VARCHAR(40)` 主键，由服务端生成。
+- `ticket_no`: `VARCHAR(32)` 主键，由服务端生成，例如 `T20260701008`。
 - `conversation_id`: 外键关联 `conversations.id`，不可空并建立索引。
 - `description`: `TEXT`，不可空。
-- `ticket_type`: `VARCHAR(64)`，不可空。
-- `status`: `VARCHAR(32)`，默认 `open`。
-- `created_at`: `DATETIME(6)`，数据库生成。
+- `ticket_type`: `ENUM('售后','投诉','咨询')`。
+- `status`: `ENUM('待处理','已处理')`，默认 `待处理`。
+- `created_at`: `DATETIME`，数据库生成。
 
-创建工单与把会话状态改为 `transferred` 在同一数据库事务中完成。
+创建工单与把会话状态改为 `已转人工` 在同一数据库事务中完成。外键行为严格采用用户提供的
+DDL，不额外增加 `ON DELETE CASCADE` 或 `ON DELETE RESTRICT`。
 
 ## 6. FAQ 测试数据
 
@@ -266,7 +270,7 @@ category: 配送
 }
 ```
 
-- `user_id` 去除空白后长度为 1–128。
+- `user_id` 去除空白后长度为 1–64，与 DDL 字段宽度一致。
 - `message` 去除空白后不得为空，并设置合理的最大长度。
 - `conversation_id` 可空；为空时创建新会话。
 
