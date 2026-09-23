@@ -24,3 +24,13 @@ def test_app_validates_settings_during_lifespan() -> None:
         pass
 
     assert calls == ["loaded"]
+
+
+def test_app_serves_chat_page_and_static_assets() -> None:
+    with TestClient(create_app(settings_loader=valid_settings)) as client:
+        page = client.get("/")
+        script = client.get("/static/chat.js")
+
+    assert page.status_code == 200
+    assert "MewHelp 智能客服" in page.text
+    assert 'fetch("/chat/stream"' in script.text
