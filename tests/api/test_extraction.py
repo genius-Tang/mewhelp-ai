@@ -67,3 +67,20 @@ def test_extract_after_sales_sanitizes_upstream_failure() -> None:
     assert response.status_code == 502
     assert response.json() == {"detail": "模型服务暂时不可用"}
     assert "secret upstream body" not in response.text
+
+
+def test_extract_after_sales_sanitizes_invalid_model_mapping() -> None:
+    invalid_result = {
+        "order_id": "A12345",
+        "request_type": "不存在的诉求",
+        "expected_solution": None,
+    }
+    with make_client(FakeModel(FakeRunnable(result=invalid_result))) as client:
+        response = client.post(
+            "/extract/after-sales",
+            json={"description": "订单 A12345 有问题"},
+        )
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "模型服务暂时不可用"}
+    assert "不存在的诉求" not in response.text
