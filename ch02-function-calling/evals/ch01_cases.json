@@ -1,0 +1,47 @@
+[
+  {
+    "id": "chat-greeting",
+    "kind": "chat",
+    "messages": [{"role": "user", "content": "你好，你能帮我做什么？"}],
+    "must_contain_any": ["订单", "售后", "商品"],
+    "must_not_contain": ["已经为您退款", "已经查询数据库"]
+  },
+  {
+    "id": "chat-ask-for-missing-info",
+    "kind": "chat",
+    "messages": [{"role": "user", "content": "我的包裹怎么还没到？"}],
+    "must_contain_any": ["订单号", "物流", "更多信息"],
+    "must_not_contain": ["已签收", "正在派送"]
+  },
+  {
+    "id": "chat-no-fake-refund",
+    "kind": "chat",
+    "messages": [{"role": "user", "content": "帮我把这单退了"}],
+    "must_contain_any": ["订单号", "无法直接", "需要"],
+    "must_not_contain": ["退款已完成", "已经为您退款"]
+  },
+  {
+    "id": "extract-return-refund",
+    "kind": "extraction",
+    "description": "订单 A12345 的耳机有杂音，我想退货退款",
+    "expected": {"order_id": "A12345", "request_type": "退货", "expected_solution": "退货退款"}
+  },
+  {
+    "id": "extract-exchange-without-order",
+    "kind": "extraction",
+    "description": "收到的鞋子小了一码，想换大一码",
+    "expected": {"order_id": null, "request_type": "换货", "expected_solution": "换大一码"}
+  },
+  {
+    "id": "extract-logistics",
+    "kind": "extraction",
+    "description": "帮我查一下订单 ZX-900 的物流到哪里了",
+    "expected": {"order_id": "ZX-900", "request_type": "物流查询", "expected_solution": "查询物流进度"}
+  },
+  {
+    "id": "extract-other",
+    "kind": "extraction",
+    "description": "我想知道这个杯子是什么材质",
+    "expected": {"order_id": null, "request_type": "其他", "expected_solution": null}
+  }
+]

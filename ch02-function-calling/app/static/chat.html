@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="MewHelp 电商智能客服对话页面" />
+    <title>MewHelp 智能客服</title>
+    <link rel="stylesheet" href="/static/chat.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">M</div>
+          <div>
+            <p class="eyebrow">MewHelp</p>
+            <h1>智能客服</h1>
+          </div>
+        </div>
+
+        <div class="status-card">
+          <span class="status-dot" aria-hidden="true"></span>
+          <div>
+            <strong>客服在线</strong>
+            <p>通常几秒内回复</p>
+          </div>
+        </div>
+
+        <section class="capability-card">
+          <p class="section-label">我可以帮你</p>
+          <ul>
+            <li><span>01</span>订单与物流咨询</li>
+            <li><span>02</span>退换货问题梳理</li>
+            <li><span>03</span>商品售后指引</li>
+          </ul>
+        </section>
+
+        <button id="reset-chat" class="reset-button" type="button">
+          <span aria-hidden="true">↻</span> 开始新对话
+        </button>
+      </aside>
+
+      <section class="chat-panel" aria-label="客服对话">
+        <header class="chat-header">
+          <div>
+            <p class="eyebrow">CUSTOMER CARE</p>
+            <h2>有什么可以帮你？</h2>
+          </div>
+          <a class="docs-link" href="/docs" target="_blank" rel="noreferrer">
+            API 文档 <span aria-hidden="true">↗</span>
+          </a>
+        </header>
+
+        <div id="message-list" class="message-list" aria-live="polite">
+          <article class="message assistant-message welcome-message">
+            <div class="avatar" aria-hidden="true">M</div>
+            <div class="message-stack">
+              <div class="bubble">
+                <p>你好，我是 MewHelp 👋</p>
+                <p>请告诉我你遇到的订单、物流或售后问题，我会尽力帮你梳理下一步。</p>
+              </div>
+              <time>智能客服</time>
+            </div>
+          </article>
+        </div>
+
+        <div id="suggestions" class="suggestions" aria-label="快捷问题">
+          <button type="button" data-prompt="我的包裹怎么还没到？">查询物流</button>
+          <button type="button" data-prompt="收到的商品有问题，怎么申请退货？">申请退货</button>
+          <button type="button" data-prompt="耳机有杂音，我该怎么办？">商品故障</button>
+        </div>
+
+        <form id="chat-form" class="composer">
+          <label class="sr-only" for="message-input">输入消息</label>
+          <textarea
+            id="message-input"
+            rows="1"
+            maxlength="4000"
+            placeholder="描述一下你遇到的问题…"
+            autocomplete="off"
+          ></textarea>
+          <div class="composer-actions">
+            <span id="input-hint">Enter 发送 · Shift + Enter 换行</span>
+            <button id="send-button" type="submit" aria-label="发送消息">
+              <span>发送</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 12h15M14 6l6 6-6 6" />
+              </svg>
+            </button>
+          </div>
+        </form>
+
+        <p class="disclaimer">AI 回复仅供参考，具体订单结果请以平台实际页面为准。</p>
+      </section>
+    </main>
+
+    <script src="/static/chat.js" defer></script>
+  </body>
+</html>
