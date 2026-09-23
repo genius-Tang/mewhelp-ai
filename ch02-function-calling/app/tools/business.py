@@ -3,7 +3,7 @@ import random
 from typing import Annotated, Any, Literal
 
 from langchain_core.tools import BaseTool, InjectedToolArg, tool
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.db.repository import Repository
 
@@ -53,11 +53,26 @@ def _seeded_random(namespace: str, value: str) -> random.Random:
 async def query_order(order_id: str) -> dict[str, Any]:
     """按订单号查询订单状态、金额和商品件数；仅在用户询问订单时使用。"""
     rng = _seeded_random("order", order_id)
+    status = rng.choice(["待付款", "处理中", "已发货", "已完成"])
+    amount = round(rng.uniform(39.0, 999.0), 2)
+    item_count = rng.randint(1, 4)
+    ordered_at = rng.choice(
+        [
+            "2026-09-18T09:20:00+08:00",
+            "2026-09-19T14:35:00+08:00",
+            "2026-09-20T20:10:00+08:00",
+        ]
+    )
+    product_summary = (
+        f"{rng.choice(['日用百货', '数码配件', '家居用品', '服饰鞋包'])}等 {item_count} 件"
+    )
     return {
         "order_id": order_id,
-        "status": rng.choice(["待付款", "处理中", "已发货", "已完成"]),
-        "amount": round(rng.uniform(39.0, 999.0), 2),
-        "item_count": rng.randint(1, 4),
+        "status": status,
+        "amount": amount,
+        "item_count": item_count,
+        "ordered_at": ordered_at,
+        "product_summary": product_summary,
     }
 
 
@@ -66,11 +81,14 @@ async def query_product(product_name: str) -> dict[str, Any]:
     """按商品名称查询当前演示价格和库存；仅在用户询问商品时使用。"""
     rng = _seeded_random("product", product_name)
     stock = rng.randint(0, 500)
+    price = round(rng.uniform(19.0, 899.0), 2)
+    specification = rng.choice(["标准款", "大号", "加厚款", "组合装"])
     return {
         "product_name": product_name,
-        "price": round(rng.uniform(19.0, 899.0), 2),
+        "price": price,
         "stock": stock,
         "available": stock > 0,
+        "specification": specification,
     }
 
 
@@ -78,15 +96,23 @@ async def query_product(product_name: str) -> dict[str, Any]:
 async def query_logistics(order_id: str) -> dict[str, Any]:
     """按订单号查询承运商、运单状态和物流轨迹；仅在用户询问配送进度时使用。"""
     rng = _seeded_random("logistics", order_id)
+    carrier = rng.choice(["顺丰速运", "中通快递", "圆通速递"])
+    tracking_no = f"MOCK{rng.randint(1_000_000_000, 9_999_999_999)}"
+    status = rng.choice(["已揽收", "运输中", "派送中", "已签收"])
+    timeline = [
+        rng.choice(["包裹已揽收", "包裹已离开分拨中心", "快递员正在派送"]),
+        rng.choice(["预计今日送达", "预计明日送达", "等待更新"]),
+    ]
+    current_location = rng.choice(
+        ["上海分拨中心", "杭州转运中心", "深圳配送站", "收件地址附近"]
+    )
     return {
         "order_id": order_id,
-        "carrier": rng.choice(["顺丰速运", "中通快递", "圆通速递"]),
-        "tracking_no": f"MOCK{rng.randint(1_000_000_000, 9_999_999_999)}",
-        "status": rng.choice(["已揽收", "运输中", "派送中", "已签收"]),
-        "timeline": [
-            rng.choice(["包裹已揽收", "包裹已离开分拨中心", "快递员正在派送"]),
-            rng.choice(["预计今日送达", "预计明日送达", "等待更新"]),
-        ],
+        "carrier": carrier,
+        "tracking_no": tracking_no,
+        "status": status,
+        "timeline": timeline,
+        "current_location": current_location,
     }
 
 
@@ -108,9 +134,12 @@ def build_business_tools(repository: Repository) -> list[BaseTool]:
     async def create_ticket(
         description: Annotated[
             str,
-            Field(
+            StringConstraints(
+                strip_whitespace=True,
                 min_length=1,
                 max_length=2000,
+            ),
+            Field(
                 description="需要人工客服跟进的问题描述",
             ),
         ],

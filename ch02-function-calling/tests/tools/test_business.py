@@ -99,12 +99,15 @@ async def test_mock_tools_return_stable_seeded_business_data() -> None:
         "status": "待付款",
         "amount": 284.47,
         "item_count": 1,
+        "ordered_at": "2026-09-18T09:20:00+08:00",
+        "product_summary": "日用百货等 1 件",
     }
     assert product == {
         "product_name": "星空猫窝",
         "price": 408.68,
         "stock": 370,
         "available": True,
+        "specification": "加厚款",
     }
     assert logistics == {
         "order_id": "1001",
@@ -112,6 +115,7 @@ async def test_mock_tools_return_stable_seeded_business_data() -> None:
         "tracking_no": "MOCK4170686075",
         "status": "已揽收",
         "timeline": ["快递员正在派送", "等待更新"],
+        "current_location": "杭州转运中心",
     }
 
     assert await query_order.ainvoke({"order_id": "1001"}) == order
@@ -192,3 +196,38 @@ async def test_create_ticket_hides_and_uses_trusted_conversation_id(
     assert ticket.description == "商品破损，请安排人工跟进"
     assert ticket.ticket_type == "售后"
     assert persisted_conversation.status == "已转人工"
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_rejects_blank_description_before_repository_call() -> None:
+    class RepositoryThatMustNotCreateTicket:
+        def __init__(self) -> None:
+            self.ticket_attempts = 0
+
+        async def create_ticket(
+            self,
+            conversation_id: int,
+            description: str,
+            ticket_type: str,
+        ) -> None:
+            self.ticket_attempts += 1
+            raise AssertionError("blank description reached Repository.create_ticket")
+
+    repository = RepositoryThatMustNotCreateTicket()
+    tools = {
+        tool.name: tool for tool in build_business_tools(repository)  # type: ignore[arg-type]
+    }
+    schema = tools["create_ticket"].tool_call_schema.model_json_schema()
+    assert set(schema["properties"]) == {"description", "ticket_type"}
+    assert "conversation_id" not in schema["properties"]
+
+    with pytest.raises(ValidationError):
+        await tools["create_ticket"].ainvoke(
+            {
+                "description": "   ",
+                "ticket_type": "售后",
+                "conversation_id": 42,
+            }
+        )
+
+    assert repository.ticket_attempts == 0
