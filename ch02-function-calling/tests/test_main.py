@@ -9,6 +9,8 @@ def valid_settings() -> Settings:
         chat_base_url="https://example.test/v1",
         chat_api_key="secret",
         chat_model="example-model",
+        database_url="mysql+asyncmy://user:password@localhost/mewhelp",
+        test_database_url="mysql+asyncmy://user:password@localhost/mewhelp_test",
         _env_file=None,
     )
 

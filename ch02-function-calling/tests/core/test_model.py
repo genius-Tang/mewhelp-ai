@@ -9,6 +9,8 @@ def test_create_chat_model_uses_openai_compatible_settings() -> None:
         chat_base_url="https://example.test/v1",
         chat_api_key="secret",
         chat_model="example-model",
+        database_url="mysql+asyncmy://user:password@localhost/mewhelp",
+        test_database_url="mysql+asyncmy://user:password@localhost/mewhelp_test",
         _env_file=None,
     )
     with patch("app.core.model.ChatOpenAI") as model_class:

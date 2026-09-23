@@ -23,6 +23,8 @@ def chat_settings() -> Settings:
         chat_base_url="https://example.test/v1",
         chat_api_key="secret",
         chat_model="example-model",
+        database_url="mysql+asyncmy://user:password@localhost/mewhelp",
+        test_database_url="mysql+asyncmy://user:password@localhost/mewhelp_test",
         history_max_tokens=4000,
         _env_file=None,
     )
@@ -71,6 +73,8 @@ def test_chat_rejects_latest_message_over_budget() -> None:
             chat_base_url="https://example.test/v1",
             chat_api_key="secret",
             chat_model="example-model",
+            database_url="mysql+asyncmy://user:password@localhost/mewhelp",
+            test_database_url="mysql+asyncmy://user:password@localhost/mewhelp_test",
             history_max_tokens=1,
             _env_file=None,
         )

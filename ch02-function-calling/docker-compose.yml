@@ -1,0 +1,24 @@
+services:
+  mysql:
+    image: mysql:8.4
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-mewhelp}
+      MYSQL_USER: ${MYSQL_USER:-mewhelp}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-mewhelp}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-mewhelp-root}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  mysql_data:
