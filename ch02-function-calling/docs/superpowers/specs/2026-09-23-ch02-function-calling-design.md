@@ -174,8 +174,10 @@ category: 配送
 
 ## 7. 五个业务工具
 
-所有工具使用 `from langchain.tools import tool` 的 `@tool(args_schema=...)` 定义。参数模型
-使用 Pydantic 字段约束和说明，工具 docstring 直接作为模型可见用途描述。
+所有工具使用 `from langchain.tools import tool` 的 `@tool` 定义，并由 Pydantic 输入 Schema
+完成参数约束。普通工具显式传入 `args_schema`；`create_ticket` 让 `@tool` 从带有
+`InjectedToolArg` 注解的函数签名推导完整输入 Schema，使模型可见的 `tool_call_schema`
+自动排除注入字段。工具 docstring 直接作为模型可见用途描述。
 
 ### 7.1 查询类 mock 工具
 
@@ -194,9 +196,10 @@ category: 配送
 
 ### 7.3 工单工具
 
-`create_ticket(description: str, ticket_type: str, conversation_id: InjectedToolArg)` 写入
-`tickets`。`conversation_id` 来自可信编排上下文，通过 LangChain 注入参数隐藏于模型可见
-Schema。执行器在参数校验后覆盖任何同名模型输入，确保模型不能选择其他会话。
+`create_ticket(description: str, ticket_type: str, conversation_id: Annotated[int, InjectedToolArg])`
+写入 `tickets`。`conversation_id` 来自可信编排上下文；LangChain 的 `tool_call_schema`
+隐藏该字段，而完整输入 Schema 仍在实际执行时验证它。执行器在模型可见参数校验后注入
+当前会话 ID，确保模型不能选择其他会话。
 
 ## 8. 注册与执行基础设施
 
@@ -390,4 +393,3 @@ Prompt 和标注数据不用脆弱的字符串单测代替行为验证。`evals/
 - 向量检索、全文检索、RAG 或同义词扩展。
 - 独立 Agent JSON API；本章能力只长在现有聊天入口及其测试/评估脚本中。
 - Alembic 迁移体系、生产部署编排、多租户鉴权、限流和工单幂等设施。
-
