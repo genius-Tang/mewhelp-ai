@@ -414,4 +414,3 @@ async def test_replay_includes_prior_final_answers_but_not_tool_traces() -> None
         "新问题",
     ]
     assert all(message.content != '{"ok":true}' for message in natural_messages)
-
