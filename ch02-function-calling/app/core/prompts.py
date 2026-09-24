@@ -2,11 +2,13 @@ from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 
-CUSTOMER_SERVICE_SYSTEM_PROMPT = """你是电商平台的智能客服。
-请使用用户当前使用的语言，保持简洁、礼貌、明确。
-信息不足时先追问，不得编造订单状态、物流进度、退款结果或平台政策。
-你当前没有工具和业务系统访问能力，不得声称已经查询数据库或完成退款、退货、换货、补发、维修等操作。
-对于超出电商客服范围的问题，简短说明能力边界并引导用户描述电商相关诉求。"""
+TOOL_SELECTOR_SYSTEM_PROMPT = """你是电商客服的工具选择器。根据用户原话最多选择一个必要工具。
+无需工具时不要编造工具调用；FAQ 关键词必须尽量保留用户原词，不得把“邮费”改写成“运费”。
+不要在本阶段输出给用户的最终答复。"""
+
+FINAL_ANSWER_SYSTEM_PROMPT = """你是电商平台智能客服。使用用户当前语言简洁、礼貌回答。
+如果提供了工具结果，只能依据该结果回答；工具失败或未找到时如实说明，不得编造数据。
+不得再请求或声称调用任何工具。"""
 
 AFTER_SALES_EXTRACTION_SYSTEM_PROMPT = """你负责从用户的售后描述中提取结构化信息。
 只能使用原文明确出现的信息，不得猜测订单号或期望方案。
@@ -16,9 +18,16 @@ AFTER_SALES_EXTRACTION_SYSTEM_PROMPT = """你负责从用户的售后描述中�
 示例：{{"order_id":"A123","request_type":"退款","expected_solution":"退款"}}。
 用户明确要求查询物流位置或进度时，expected_solution 填写“查询物流进度”；例如：{{"order_id":"ZX-900","request_type":"物流查询","expected_solution":"查询物流进度"}}。"""
 
-CHAT_PROMPT = ChatPromptTemplate.from_messages(
+TOOL_SELECTOR_PROMPT = ChatPromptTemplate.from_messages(
     [
-        ("system", CUSTOMER_SERVICE_SYSTEM_PROMPT),
+        ("system", TOOL_SELECTOR_SYSTEM_PROMPT),
+        MessagesPlaceholder("history"),
+    ]
+)
+
+FINAL_ANSWER_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        ("system", FINAL_ANSWER_SYSTEM_PROMPT),
         MessagesPlaceholder("history"),
     ]
 )
@@ -31,8 +40,20 @@ EXTRACTION_PROMPT = ChatPromptTemplate.from_messages(
 )
 
 
+def build_tool_selector_prompt_messages(
+    history: list[BaseMessage],
+) -> list[BaseMessage]:
+    return TOOL_SELECTOR_PROMPT.invoke({"history": history}).to_messages()
+
+
+def build_final_answer_prompt_messages(history: list[BaseMessage]) -> list[BaseMessage]:
+    return FINAL_ANSWER_PROMPT.invoke({"history": history}).to_messages()
+
+
 def build_chat_prompt_messages(history: list[BaseMessage]) -> list[BaseMessage]:
-    return CHAT_PROMPT.invoke({"history": history}).to_messages()
+    """Compatibility alias for chapter-one callers until the API is rewired."""
+
+    return build_final_answer_prompt_messages(history)
 
 
 def build_extraction_prompt_messages(description: str) -> list[BaseMessage]:

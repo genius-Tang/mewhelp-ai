@@ -1,10 +1,8 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from typing import Protocol
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.messages.utils import count_tokens_approximately, trim_messages
-
-from app.schemas.chat import ChatMessage
-
 
 TokenCounter = Callable[[Sequence[BaseMessage]], int]
 
@@ -13,12 +11,19 @@ class MessageBudgetExceeded(ValueError):
     """Raised when the latest user message alone exceeds the history budget."""
 
 
-def to_langchain_messages(messages: list[ChatMessage]) -> list[BaseMessage]:
+class ReplayMessage(Protocol):
+    role: str
+    content: str | None
+
+
+def to_langchain_messages(messages: Iterable[ReplayMessage]) -> list[BaseMessage]:
+    """Convert natural replay rows without depending on ORM model classes."""
+
     converted: list[BaseMessage] = []
     for message in messages:
-        if message.role == "user":
+        if message.role == "user" and message.content is not None:
             converted.append(HumanMessage(content=message.content))
-        else:
+        elif message.role == "assistant" and message.content:
             converted.append(AIMessage(content=message.content))
     return converted
 
