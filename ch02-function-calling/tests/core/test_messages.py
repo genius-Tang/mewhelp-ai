@@ -1,8 +1,15 @@
+from dataclasses import dataclass
+
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.core.messages import MessageBudgetExceeded, to_langchain_messages, trim_history
-from app.schemas.chat import ChatMessage
+
+
+@dataclass
+class ReplayRow:
+    role: str
+    content: str | None
 
 
 def word_counter(messages) -> int:
@@ -12,9 +19,9 @@ def word_counter(messages) -> int:
 def test_to_langchain_messages_preserves_roles_and_order() -> None:
     result = to_langchain_messages(
         [
-            ChatMessage(role="user", content="first"),
-            ChatMessage(role="assistant", content="second"),
-            ChatMessage(role="user", content="third"),
+            ReplayRow(role="user", content="first"),
+            ReplayRow(role="assistant", content="second"),
+            ReplayRow(role="user", content="third"),
         ]
     )
     assert [type(message) for message in result] == [HumanMessage, AIMessage, HumanMessage]

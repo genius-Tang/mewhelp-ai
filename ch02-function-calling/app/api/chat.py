@@ -1,15 +1,21 @@
 from collections.abc import AsyncIterator
-from typing import Annotated, Any
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.dependencies import get_chat_model
+from app.api.dependencies import get_chat_orchestrator
 from app.api.sse import encode_sse
-from app.core.config import Settings, get_settings
-from app.core.messages import MessageBudgetExceeded
 from app.schemas.chat import ChatRequest
-from app.services.chat import prepare_chat_messages, stream_chat
+from app.services.chat import (
+    ChatOrchestrator,
+    ConversationNotFound,
+    DoneEvent,
+    MultipleToolCalls,
+    TokenEvent,
+    ToolEvent,
+)
 
 
 router = APIRouter(tags=["chat"])
@@ -18,25 +24,58 @@ router = APIRouter(tags=["chat"])
 @router.post("/chat/stream")
 async def chat_stream(
     request: ChatRequest,
-    settings: Annotated[Settings, Depends(get_settings)],
-    model: Annotated[Any, Depends(get_chat_model)],
+    orchestrator: Annotated[ChatOrchestrator, Depends(get_chat_orchestrator)],
 ) -> StreamingResponse:
-    try:
-        messages = prepare_chat_messages(request, settings.history_max_tokens)
-    except MessageBudgetExceeded as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
     async def events() -> AsyncIterator[str]:
         try:
-            async for token in stream_chat(messages, model):
-                yield encode_sse("token", {"content": token})
+            async for event in orchestrator.stream_turn(
+                request.user_id,
+                request.message,
+                request.conversation_id,
+            ):
+                if isinstance(event, ToolEvent):
+                    yield encode_sse(
+                        "tool",
+                        {"name": event.name, "status": event.status},
+                    )
+                elif isinstance(event, TokenEvent):
+                    yield encode_sse("token", {"content": event.content})
+                elif isinstance(event, DoneEvent):
+                    yield encode_sse(
+                        "done",
+                        {
+                            "conversation_id": event.conversation_id,
+                            "tools": list(event.tools),
+                        },
+                    )
+                    return
+        except ConversationNotFound:
+            yield encode_sse(
+                "error",
+                {"code": "conversation_not_found", "message": "会话不存在"},
+            )
+            return
+        except MultipleToolCalls:
+            yield encode_sse(
+                "error",
+                {
+                    "code": "multiple_tool_calls",
+                    "message": "模型返回了多个工具调用",
+                },
+            )
+            return
+        except SQLAlchemyError:
+            yield encode_sse(
+                "error",
+                {"code": "database_error", "message": "数据库暂时不可用"},
+            )
+            return
         except Exception:
             yield encode_sse(
                 "error",
                 {"code": "upstream_error", "message": "模型服务暂时不可用"},
             )
             return
-        yield encode_sse("done", {})
 
     return StreamingResponse(
         events(),

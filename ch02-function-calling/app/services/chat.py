@@ -1,23 +1,15 @@
-import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Literal, TypeAlias
 
-from langchain_core.messages import BaseMessage
-
 from app.core.messages import to_langchain_messages, trim_history
 from app.core.prompts import (
-    build_chat_prompt_messages,
     build_final_answer_prompt_messages,
     build_tool_selector_prompt_messages,
 )
 from app.db.repository import Repository
-from app.schemas.chat import ChatRequest
 from app.tools.executor import ToolExecutor
 from app.tools.registry import ToolRegistry
-
-
-logger = logging.getLogger(__name__)
 
 
 class ConversationNotFound(LookupError):
@@ -150,24 +142,3 @@ class ChatOrchestrator:
             "name": tool_call.get("name", ""),
             "args": tool_call.get("args", {}),
         }
-
-
-def prepare_chat_messages(request: ChatRequest, max_tokens: int) -> list[BaseMessage]:
-    """Keep the chapter-one API usable until Task 7 replaces the route contract."""
-
-    history = to_langchain_messages(request.messages)
-    trimmed = trim_history(history, max_tokens=max_tokens)
-    return build_chat_prompt_messages(trimmed)
-
-
-async def stream_chat(messages: list[BaseMessage], model: Any) -> AsyncIterator[str]:
-    """Keep the chapter-one streaming helper usable until Task 7."""
-
-    emitted_text = False
-    async for chunk in model.astream(messages):
-        text = chunk.text
-        if text:
-            emitted_text = True
-            yield text
-    if not emitted_text:
-        logger.warning("chat model stream returned no text")

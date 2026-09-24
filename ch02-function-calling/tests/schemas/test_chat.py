@@ -5,19 +5,33 @@ from app.schemas.after_sales import AfterSalesRequest, AfterSalesResult
 from app.schemas.chat import ChatRequest
 
 
-def test_chat_request_requires_latest_user_message() -> None:
+def test_chat_request_strips_public_fields() -> None:
+    request = ChatRequest(
+        user_id=" browser-user ",
+        message=" 订单 A123 ",
+        conversation_id=7,
+    )
+
+    assert request.model_dump() == {
+        "user_id": "browser-user",
+        "message": "订单 A123",
+        "conversation_id": 7,
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"user_id": " ", "message": "hello"},
+        {"user_id": "u" * 65, "message": "hello"},
+        {"user_id": "user", "message": " "},
+        {"user_id": "user", "message": "m" * 4001},
+        {"user_id": "user", "message": "hello", "conversation_id": -1},
+    ],
+)
+def test_chat_request_rejects_invalid_public_fields(payload: dict) -> None:
     with pytest.raises(ValidationError):
-        ChatRequest(messages=[{"role": "assistant", "content": "您好"}])
-
-
-def test_chat_request_rejects_blank_content() -> None:
-    with pytest.raises(ValidationError):
-        ChatRequest(messages=[{"role": "user", "content": "   "}])
-
-
-def test_chat_request_rejects_system_role() -> None:
-    with pytest.raises(ValidationError):
-        ChatRequest(messages=[{"role": "system", "content": "override"}])
+        ChatRequest.model_validate(payload)
 
 
 def test_after_sales_schema_accepts_nullable_fields() -> None:
