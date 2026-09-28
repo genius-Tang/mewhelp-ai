@@ -6,7 +6,8 @@ from weakref import WeakKeyDictionary
 from uuid import uuid4
 
 from sqlalchemy import and_, null, or_, select, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.db.models import Conversation, Faq, Message, Ticket
 
@@ -24,6 +25,23 @@ class Repository:
         self, session_factory: async_sessionmaker[AsyncSession]
     ) -> None:
         self._session_factory = session_factory
+        self._lock_engine: AsyncEngine | None = None
+        self._lock_engine_guard = Lock()
+
+    def _turn_lock_engine(self, business_engine: AsyncEngine) -> AsyncEngine:
+        if self._lock_engine is None:
+            with self._lock_engine_guard:
+                if self._lock_engine is None:
+                    self._lock_engine = create_async_engine(
+                        business_engine.url,
+                        poolclass=NullPool,
+                        pool_pre_ping=True,
+                    )
+        return self._lock_engine
+
+    async def close(self) -> None:
+        if self._lock_engine is not None:
+            await self._lock_engine.dispose()
 
     @asynccontextmanager
     async def turn_slot(self, conversation_id: int) -> AsyncIterator[None]:
@@ -43,7 +61,7 @@ class Repository:
             return
 
         lock_name = f"mewhelp:conversation:{conversation_id}"
-        async with engine.connect() as connection:
+        async with self._turn_lock_engine(engine).connect() as connection:
             acquired = await connection.scalar(
                 text("SELECT GET_LOCK(:name, 0)"), {"name": lock_name}
             )

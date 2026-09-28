@@ -127,6 +127,7 @@ async def main():
     settings = get_settings()
     cases = json.loads(CASES_PATH.read_text(encoding="utf-8"))
     engine = create_database_engine(settings)
+    repository = None
     try:
         session_factory = create_session_factory(engine)
         repository = Repository(session_factory)
@@ -168,7 +169,11 @@ async def main():
         print(f"chapter-2 eval: {summary['passed']}/{summary['total']} passed")
         return 0 if summary["passed"] == summary["total"] else 1
     finally:
-        await engine.dispose()
+        try:
+            if repository is not None:
+                await repository.close()
+        finally:
+            await engine.dispose()
 
 
 if __name__ == "__main__":

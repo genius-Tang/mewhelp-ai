@@ -1,8 +1,9 @@
 import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.core.config import get_settings
 from app.db.models import Conversation, Message, Ticket
 from app.db.repository import Repository, TurnBusy
 
@@ -40,6 +41,28 @@ async def test_mysql_turn_slot_rejects_other_repository_and_releases_on_error(
 
     async with second_worker.turn_slot(conversation.id):
         pass
+
+
+async def test_distinct_turn_locks_do_not_starve_business_connection_pool() -> None:
+    engine = create_async_engine(
+        get_settings().test_database_url.get_secret_value(),
+        pool_size=2,
+        max_overflow=0,
+        pool_timeout=0.25,
+    )
+    repository = Repository(async_sessionmaker(engine, expire_on_commit=False))
+    try:
+        first = await repository.create_conversation("first")
+        second = await repository.create_conversation("second")
+        async with repository.turn_slot(first.id):
+            async with repository.turn_slot(second.id):
+                await repository.append_message(first.id, "user", "first question")
+                await repository.append_message(second.id, "user", "second question")
+        assert [row.content for row in await repository.list_replay_messages(first.id)] == ["first question"]
+        assert [row.content for row in await repository.list_replay_messages(second.id)] == ["second question"]
+    finally:
+        await repository.close()
+        await engine.dispose()
 
 
 async def test_messages_preserve_complete_tool_trace_order(

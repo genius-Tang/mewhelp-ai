@@ -55,6 +55,7 @@ def create_app(settings_loader: Callable[[], Settings] = get_settings) -> FastAP
     async def lifespan(application: FastAPI):
         settings = settings_loader()
         engine = create_database_engine(settings)
+        repository: Repository | None = None
         try:
             session_factory = create_session_factory(engine)
             repository = Repository(session_factory)
@@ -64,7 +65,11 @@ def create_app(settings_loader: Callable[[], Settings] = get_settings) -> FastAP
             )
             yield
         finally:
-            await engine.dispose()
+            try:
+                if repository is not None:
+                    await repository.close()
+            finally:
+                await engine.dispose()
 
     application = FastAPI(title="MewHelp", version="0.1.0", lifespan=lifespan)
     application.include_router(chat_router)
