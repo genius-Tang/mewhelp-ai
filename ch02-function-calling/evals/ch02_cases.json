@@ -1,0 +1,52 @@
+[
+  {
+    "id": "order-status",
+    "message": "订单 1001 现在是什么状态？",
+    "expected_tool": "query_order",
+    "expected_tool_ok": true,
+    "answer_terms": ["1001"]
+  },
+  {
+    "id": "product-price-stock",
+    "message": "无线鼠标现在多少钱，有库存吗？",
+    "expected_tool": "query_product",
+    "expected_tool_ok": true,
+    "answer_terms": ["无线鼠标"]
+  },
+  {
+    "id": "logistics-1001",
+    "message": "订单 1001 的物流到哪了？",
+    "expected_tool": "query_logistics",
+    "expected_tool_ok": true,
+    "answer_terms": ["1001"]
+  },
+  {
+    "id": "faq-return-policy",
+    "message": "退货政策是什么",
+    "expected_tool": "query_faq",
+    "expected_tool_ok": true,
+    "expected_faq_found": true,
+    "answer_terms": ["七天"]
+  },
+  {
+    "id": "faq-postage-expected-miss",
+    "message": "邮费是多少",
+    "expected_tool": "query_faq",
+    "expected_tool_ok": true,
+    "expected_faq_found": false,
+    "answer_terms": ["未找到", "没有查到", "暂无", "无法查询", "未能找到", "未查到"]
+  },
+  {
+    "id": "explicit-human-ticket",
+    "message": "我想找人工客服处理退款，请帮我转接人工。",
+    "expected_tool": "create_ticket",
+    "expected_tool_ok": true,
+    "answer_terms": ["人工", "工单"]
+  },
+  {
+    "id": "greeting-no-tool",
+    "message": "你好",
+    "expected_tool": null,
+    "answer_terms": ["你好", "您好"]
+  }
+]
