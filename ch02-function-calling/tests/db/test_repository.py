@@ -4,7 +4,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Conversation, Message, Ticket
-from app.db.repository import Repository
+from app.db.repository import Repository, TurnBusy
 
 
 @pytest.fixture
@@ -22,6 +22,24 @@ async def test_conversation_lookup_requires_matching_user(
     assert await repository.get_conversation(conversation.id, "owner") is not None
     assert await repository.get_conversation(conversation.id, "another-user") is None
     assert await repository.get_conversation(conversation.id + 1, "owner") is None
+
+
+async def test_mysql_turn_slot_rejects_other_repository_and_releases_on_error(
+    repository: Repository,
+    test_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    conversation = await repository.create_conversation("owner")
+    second_worker = Repository(test_session_factory)
+
+    with pytest.raises(ValueError, match="test failure"):
+        async with repository.turn_slot(conversation.id):
+            with pytest.raises(TurnBusy):
+                async with second_worker.turn_slot(conversation.id):
+                    pytest.fail("overlapping turn was admitted")
+            raise ValueError("test failure")
+
+    async with second_worker.turn_slot(conversation.id):
+        pass
 
 
 async def test_messages_preserve_complete_tool_trace_order(

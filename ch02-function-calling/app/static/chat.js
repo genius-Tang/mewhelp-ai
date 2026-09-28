@@ -8,7 +8,7 @@ const resetButtons = document.querySelectorAll("#reset-chat, #reset-chat-mobile"
 const userIdKey = "mewhelp_user_id";
 const conversationIdKey = "mewhelp_conversation_id";
 let userId = localStorage.getItem(userIdKey);
-if (!userId) {
+if (typeof userId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(userId)) {
   userId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `user-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -117,6 +117,16 @@ function parseSseBlock(block) {
   return { eventName, data: JSON.parse(dataLines.join("\n")) };
 }
 
+function responseErrorDetail(detail) {
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail) && detail.length) {
+    const field = detail[0]?.loc?.at(-1);
+    const labels = { user_id: "用户标识", message: "消息", conversation_id: "会话" };
+    return `${labels[field] || "请求参数"}格式不正确，请检查后重试`;
+  }
+  return "请求失败，请稍后重试";
+}
+
 async function streamReply(message, bubble, signal) {
   const storedId = Number(localStorage.getItem(conversationIdKey));
   const conversationId = Number.isSafeInteger(storedId) && storedId > 0 ? storedId : null;
@@ -131,7 +141,7 @@ async function streamReply(message, bubble, signal) {
     let detail = "请求失败，请稍后重试";
     try {
       const payload = await response.json();
-      detail = payload.detail || detail;
+      detail = responseErrorDetail(payload.detail);
     } catch {
       // Keep the safe fallback message for non-JSON responses.
     }

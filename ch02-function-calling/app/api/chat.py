@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -7,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.dependencies import get_chat_orchestrator
 from app.api.sse import encode_sse
+from app.db.repository import TurnBusy
 from app.schemas.chat import ChatRequest
 from app.services.chat import (
     ChatOrchestrator,
@@ -28,27 +30,29 @@ async def chat_stream(
 ) -> StreamingResponse:
     async def events() -> AsyncIterator[str]:
         try:
-            async for event in orchestrator.stream_turn(
+            stream = orchestrator.stream_turn(
                 request.user_id,
                 request.message,
                 request.conversation_id,
-            ):
-                if isinstance(event, ToolEvent):
-                    yield encode_sse(
-                        "tool",
-                        {"name": event.name, "status": event.status},
-                    )
-                elif isinstance(event, TokenEvent):
-                    yield encode_sse("token", {"content": event.content})
-                elif isinstance(event, DoneEvent):
-                    yield encode_sse(
-                        "done",
-                        {
-                            "conversation_id": event.conversation_id,
-                            "tools": list(event.tools),
-                        },
-                    )
-                    return
+            )
+            async with aclosing(stream):
+                async for event in stream:
+                    if isinstance(event, ToolEvent):
+                        yield encode_sse(
+                            "tool",
+                            {"name": event.name, "status": event.status},
+                        )
+                    elif isinstance(event, TokenEvent):
+                        yield encode_sse("token", {"content": event.content})
+                    elif isinstance(event, DoneEvent):
+                        yield encode_sse(
+                            "done",
+                            {
+                                "conversation_id": event.conversation_id,
+                                "tools": list(event.tools),
+                            },
+                        )
+                        return
         except ConversationNotFound:
             yield encode_sse(
                 "error",
@@ -62,6 +66,12 @@ async def chat_stream(
                     "code": "multiple_tool_calls",
                     "message": "模型返回了多个工具调用",
                 },
+            )
+            return
+        except TurnBusy:
+            yield encode_sse(
+                "error",
+                {"code": "conversation_busy", "message": "上一条消息仍在处理中，请稍后重试"},
             )
             return
         except SQLAlchemyError:

@@ -4,6 +4,7 @@
     "message": "订单 1001 现在是什么状态？",
     "expected_tool": "query_order",
     "expected_tool_ok": true,
+    "grounded_fields": ["status"],
     "answer_terms": ["1001"]
   },
   {
@@ -11,6 +12,7 @@
     "message": "无线鼠标现在多少钱，有库存吗？",
     "expected_tool": "query_product",
     "expected_tool_ok": true,
+    "grounded_fields": ["price", "stock"],
     "answer_terms": ["无线鼠标"]
   },
   {
@@ -18,6 +20,7 @@
     "message": "订单 1001 的物流到哪了？",
     "expected_tool": "query_logistics",
     "expected_tool_ok": true,
+    "grounded_fields": ["carrier", "tracking_no"],
     "answer_terms": ["1001"]
   },
   {
@@ -26,6 +29,7 @@
     "expected_tool": "query_faq",
     "expected_tool_ok": true,
     "expected_faq_found": true,
+    "grounded_terms": ["七天"],
     "answer_terms": ["七天"]
   },
   {
@@ -41,6 +45,7 @@
     "message": "我想找人工客服处理退款，请帮我转接人工。",
     "expected_tool": "create_ticket",
     "expected_tool_ok": true,
+    "grounded_fields": ["ticket_no"],
     "answer_terms": ["人工", "工单"]
   },
   {

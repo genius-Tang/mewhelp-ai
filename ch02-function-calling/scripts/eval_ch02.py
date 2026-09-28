@@ -20,6 +20,24 @@ CASES_PATH = CHAPTER_DIR / "evals" / "ch02_cases.json"
 RESULTS_PATH = CHAPTER_DIR / "evals" / "ch02_results.json"
 
 
+def answer_grounds_tool(case: dict, answer: str, payloads: list[dict]) -> bool:
+    if case["expected_tool"] is None:
+        return True
+    if len(payloads) != 1 or payloads[0].get("tool") != case["expected_tool"]:
+        return False
+    data = payloads[0].get("data")
+    if not isinstance(data, dict):
+        return not case.get("grounded_fields") and not case.get("grounded_terms")
+    for field in case.get("grounded_fields", []):
+        value = data.get(field)
+        if value is None or str(value) not in answer:
+            return False
+    for term in case.get("grounded_terms", []):
+        if term not in str(data.get("answer", "")) or term not in answer:
+            return False
+    return True
+
+
 async def evaluate_case(case, orchestrator, session_factory, run_id):
     tools = []
     tokens = []
@@ -67,6 +85,7 @@ async def evaluate_case(case, orchestrator, session_factory, run_id):
     answer = "".join(tokens)
     # Terms are alternative signs that the answer addressed the labeled intent.
     answer_term_ok = any(term in answer for term in case["answer_terms"])
+    grounded_ok = answer_grounds_tool(case, answer, tool_payloads)
     passed = (
         error_type is None
         and done_id is not None
@@ -74,6 +93,7 @@ async def evaluate_case(case, orchestrator, session_factory, run_id):
         and len(tool_payloads) == len(expected_tools)
         and bool(answer)
         and answer_term_ok
+        and grounded_ok
         and (
             "expected_tool_ok" not in case
             or actual_ok is case["expected_tool_ok"]
@@ -88,13 +108,16 @@ async def evaluate_case(case, orchestrator, session_factory, run_id):
         "passed": passed,
         "expected_tool": expected_tool,
         "actual_tools": tools,
+        "tool_payloads": tool_payloads,
         "expected_tool_ok": case.get("expected_tool_ok"),
         "actual_tool_ok": actual_ok,
         "expected_faq_found": case.get("expected_faq_found"),
         "actual_faq_found": actual_found,
         "answer_term_ok": answer_term_ok,
+        "grounded_ok": grounded_ok,
         "token_count": len(tokens),
         "answer_length": len(answer),
+        "answer": answer,
         "conversation_id": done_id,
         "error_type": error_type,
     }
@@ -128,6 +151,7 @@ async def main():
                 f"ok={result.get('actual_tool_ok')} "
                 f"found={result.get('actual_faq_found')} "
                 f"answer_term={result.get('answer_term_ok')} "
+                f"grounded={result.get('grounded_ok')} "
                 f"error={result.get('error_type')}"
             )
 

@@ -7,10 +7,10 @@ services:
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-mewhelp}
       MYSQL_USER: ${MYSQL_USER:-mewhelp}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-mewhelp}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-mewhelp-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
     ports:
-      - "${MYSQL_PORT:-3306}:3306"
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro

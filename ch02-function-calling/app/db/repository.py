@@ -1,9 +1,22 @@
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from threading import Lock
+from weakref import WeakKeyDictionary
 from uuid import uuid4
 
-from sqlalchemy import and_, null, or_, select
+from sqlalchemy import and_, null, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Conversation, Faq, Message, Ticket
+
+
+class TurnBusy(RuntimeError):
+    """A conversation already has an unfinished turn."""
+
+
+_fallback_guard = Lock()
+_fallback_occupied: WeakKeyDictionary[object, set[int]] = WeakKeyDictionary()
 
 
 class Repository:
@@ -11,6 +24,44 @@ class Repository:
         self, session_factory: async_sessionmaker[AsyncSession]
     ) -> None:
         self._session_factory = session_factory
+
+    @asynccontextmanager
+    async def turn_slot(self, conversation_id: int) -> AsyncIterator[None]:
+        engine = self._session_factory.kw["bind"]
+        if engine.dialect.name != "mysql":
+            # Test databases share this nonblocking reservation within one process.
+            with _fallback_guard:
+                occupied = _fallback_occupied.setdefault(engine, set())
+                if conversation_id in occupied:
+                    raise TurnBusy("会话正在处理上一条消息，请稍后重试")
+                occupied.add(conversation_id)
+            try:
+                yield
+            finally:
+                with _fallback_guard:
+                    occupied.remove(conversation_id)
+            return
+
+        lock_name = f"mewhelp:conversation:{conversation_id}"
+        async with engine.connect() as connection:
+            acquired = await connection.scalar(
+                text("SELECT GET_LOCK(:name, 0)"), {"name": lock_name}
+            )
+            if acquired != 1:
+                raise TurnBusy("会话正在处理上一条消息，请稍后重试")
+            try:
+                yield
+            finally:
+                release = asyncio.create_task(
+                    connection.scalar(
+                        text("SELECT RELEASE_LOCK(:name)"), {"name": lock_name}
+                    )
+                )
+                try:
+                    await asyncio.shield(release)
+                except asyncio.CancelledError:
+                    await release
+                    raise
 
     async def create_conversation(self, user_id: str) -> Conversation:
         async with self._session_factory() as session, session.begin():

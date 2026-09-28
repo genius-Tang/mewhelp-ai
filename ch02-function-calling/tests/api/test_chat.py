@@ -6,6 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.dependencies import get_chat_orchestrator
 from app.core.config import Settings
+from app.db.repository import TurnBusy
 from app.main import create_app
 from app.services.chat import (
     ConversationNotFound,
@@ -140,6 +141,10 @@ def test_chat_stream_stops_after_done_event() -> None:
         (
             MultipleToolCalls("provider returned secret payload"),
             'event: error\ndata: {"code":"multiple_tool_calls","message":"模型返回了多个工具调用"}\n\n',
+        ),
+        (
+            TurnBusy("private lock details"),
+            'event: error\ndata: {"code":"conversation_busy","message":"上一条消息仍在处理中，请稍后重试"}\n\n',
         ),
         (
             SQLAlchemyError("mysql+asyncmy://user:password@host/database"),

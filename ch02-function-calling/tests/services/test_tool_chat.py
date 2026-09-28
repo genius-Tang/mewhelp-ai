@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -18,11 +19,16 @@ from app.services.chat import (
     TokenEvent,
     ToolEvent,
 )
+from app.db.repository import Repository
 from app.tools.executor import ToolExecution
 
 
-class FakeRepository:
+class FakeRepository(Repository):
     def __init__(self) -> None:
+        class FakeEngine:
+            dialect = SimpleNamespace(name="sqlite")
+
+        super().__init__(SimpleNamespace(kw={"bind": FakeEngine()}))
         self.conversations: dict[int, str] = {}
         self.messages: list[SimpleNamespace] = []
         self.next_conversation_id = 1
@@ -99,6 +105,7 @@ class FakeChatModel:
         self.stream_error = stream_error
         self.bind_calls: list[tuple[list, dict]] = []
         self.astream_calls: list[list] = []
+        self.stream_gate: asyncio.Event | None = None
 
     def bind_tools(self, tools: list, **kwargs) -> FakeBoundSelector:
         self.bind_calls.append((tools, kwargs))
@@ -108,6 +115,8 @@ class FakeChatModel:
         self.astream_calls.append(messages)
         for content in self.chunks:
             yield AIMessageChunk(content=content)
+            if self.stream_gate is not None:
+                await self.stream_gate.wait()
         if self.stream_error is not None:
             raise self.stream_error
 
@@ -414,3 +423,53 @@ async def test_replay_includes_prior_final_answers_but_not_tool_traces() -> None
         "新问题",
     ]
     assert all(message.content != '{"ok":true}' for message in natural_messages)
+
+
+@pytest.mark.parametrize("finish", ["complete", "close", "error", "cancel"])
+async def test_same_conversation_rejects_overlap_and_releases_turn(finish: str) -> None:
+    repository = FakeRepository()
+    repository.conversations[7] = "user-1"
+    orchestrator, _, model, _, _ = build_orchestrator(
+        repository=repository,
+        chunks=["部分"],
+        stream_error=RuntimeError("upstream failed") if finish == "error" else None,
+    )
+    first = orchestrator.stream_turn("user-1", "问题 A", 7)
+    assert await anext(first) == TokenEvent(content="部分")
+
+    with pytest.raises(RuntimeError, match="正在处理"):
+        await collect_events(
+            orchestrator,
+            user_id="user-1",
+            message="问题 B",
+            conversation_id=7,
+        )
+    assert [row.content for row in repository.messages if row.role == "user"] == ["问题 A"]
+    assert [message.content for message in model.selector.calls[0] if isinstance(message, HumanMessage)] == ["问题 A"]
+
+    if finish == "complete":
+        assert await anext(first) == DoneEvent(conversation_id=7, tools=())
+        with pytest.raises(StopAsyncIteration):
+            await anext(first)
+    elif finish == "close":
+        await first.aclose()
+    elif finish == "cancel":
+        model.stream_gate = asyncio.Event()
+        task = asyncio.create_task(anext(first))
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        model.stream_gate.set()
+    else:
+        with pytest.raises(RuntimeError, match="upstream failed"):
+            await anext(first)
+
+    model.stream_error = None
+    second = await collect_events(
+        orchestrator,
+        user_id="user-1",
+        message="问题 B",
+        conversation_id=7,
+    )
+    assert second[-1] == DoneEvent(conversation_id=7, tools=())

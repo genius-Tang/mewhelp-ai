@@ -13,7 +13,7 @@ python -m pip install -e ".[dev]"
 Copy-Item .env.example .env
 ```
 
-填写 `.env` 的模型配置，并确认数据库地址与 `docker-compose.yml` 的端口一致。`.env` 只保存在本机，不提交到 Git。
+填写 `.env` 的模型配置，并分别为 `MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD` 设置仅用于本机的随机密码；将相同的普通用户密码填入 `DATABASE_URL` 和 `TEST_DATABASE_URL`，并确认端口与 `MYSQL_PORT` 一致。密码包含 `@`、`:` 等 URL 特殊字符时，数据库 URL 中的密码须做百分号编码。Compose 缺少这两个密码会直接报错。`.env` 只保存在本机，不提交到 Git；MySQL 仅映射到 `127.0.0.1`。
 
 ## 启动演示
 
