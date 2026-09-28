@@ -3,10 +3,20 @@ const input = document.querySelector("#message-input");
 const sendButton = document.querySelector("#send-button");
 const messageList = document.querySelector("#message-list");
 const suggestions = document.querySelector("#suggestions");
-const resetButton = document.querySelector("#reset-chat");
+const resetButtons = document.querySelectorAll("#reset-chat, #reset-chat-mobile");
 
-const conversation = [];
+const userIdKey = "mewhelp_user_id";
+const conversationIdKey = "mewhelp_conversation_id";
+let userId = localStorage.getItem(userIdKey);
+if (!userId) {
+  userId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `user-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  localStorage.setItem(userIdKey, userId);
+}
 let isStreaming = false;
+let activeController = null;
+let requestGeneration = 0;
 
 function nowLabel() {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -107,11 +117,14 @@ function parseSseBlock(block) {
   return { eventName, data: JSON.parse(dataLines.join("\n")) };
 }
 
-async function streamReply(messages, bubble) {
+async function streamReply(message, bubble, signal) {
+  const storedId = Number(localStorage.getItem(conversationIdKey));
+  const conversationId = Number.isSafeInteger(storedId) && storedId > 0 ? storedId : null;
   const response = await fetch("/chat/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ user_id: userId, message, conversation_id: conversationId }),
+    signal,
   });
 
   if (!response.ok) {
@@ -134,6 +147,10 @@ async function streamReply(messages, bubble) {
   let buffer = "";
   let assistantText = "";
   let completed = false;
+  let doneConversationId = null;
+  const answer = document.createElement("span");
+  answer.className = "answer-text";
+  bubble.append(answer);
 
   while (true) {
     const { value, done } = await reader.read();
@@ -147,12 +164,32 @@ async function streamReply(messages, bubble) {
       const parsed = parseSseBlock(block);
       if (!parsed) continue;
 
-      if (parsed.eventName === "token") {
-        assistantText += parsed.data.content || "";
-        renderAssistantText(bubble, assistantText);
+      if (parsed.eventName === "tool") {
+        const name = parsed.data.name;
+        if (typeof name === "string" && name.trim()) {
+          let badge = bubble.querySelector(".tool-badge");
+          if (!badge) {
+            badge = document.createElement("span");
+            badge.className = "tool-badge";
+            bubble.prepend(badge);
+          }
+          badge.textContent = `调用了 ${name}`;
+        }
+        scrollToLatest();
+      } else if (parsed.eventName === "token") {
+        const token = parsed.data.content;
+        if (typeof token === "string" && token) {
+          assistantText += token;
+          renderAssistantText(answer, assistantText);
+          bubble.classList.remove("typing");
+        }
         scrollToLatest();
       } else if (parsed.eventName === "done") {
-        completed = true;
+        const id = parsed.data.conversation_id;
+        if (Number.isSafeInteger(id) && id > 0) {
+          doneConversationId = id;
+          completed = true;
+        }
       } else if (parsed.eventName === "error") {
         throw new Error(parsed.data.message || "模型服务暂时不可用");
       }
@@ -165,40 +202,52 @@ async function streamReply(messages, bubble) {
     throw new Error("回复意外中断，请重新发送");
   }
 
-  return assistantText;
+  if (signal.aborted) return;
+  localStorage.setItem(conversationIdKey, String(doneConversationId));
 }
 
 async function sendMessage() {
   const content = input.value.trim();
   if (!content || isStreaming) return;
 
-  conversation.push({ role: "user", content });
-  const requestMessages = conversation.map((message) => ({ ...message }));
   createMessage("user", content);
 
   input.value = "";
   resizeInput();
   suggestions.hidden = true;
   setBusy(true);
+  const generation = ++requestGeneration;
+  const controller = new AbortController();
+  activeController = controller;
 
   const assistantBubble = createMessage("assistant");
   assistantBubble.classList.add("typing");
 
   try {
-    const assistantText = await streamReply(requestMessages, assistantBubble);
-    conversation.push({ role: "assistant", content: assistantText });
+    await streamReply(content, assistantBubble, controller.signal);
   } catch (error) {
-    assistantBubble.classList.add("error-bubble");
-    assistantBubble.textContent = error instanceof Error ? error.message : "请求失败，请稍后重试";
+    if (!controller.signal.aborted) {
+      assistantBubble.classList.add("error-bubble");
+      const answer = assistantBubble.querySelector(".answer-text") || assistantBubble;
+      answer.textContent = error instanceof Error ? error.message : "请求失败，请稍后重试";
+    }
   } finally {
     assistantBubble.classList.remove("typing");
-    setBusy(false);
-    input.focus();
-    scrollToLatest();
+    if (generation === requestGeneration) {
+      activeController = null;
+      setBusy(false);
+      input.focus();
+      scrollToLatest();
+    }
   }
 }
 
 form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void sendMessage();
+});
+
+sendButton.addEventListener("click", (event) => {
   event.preventDefault();
   void sendMessage();
 });
@@ -211,22 +260,27 @@ input.addEventListener("keydown", (event) => {
   }
 });
 
-suggestions.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-prompt]");
-  if (!button) return;
-  input.value = button.dataset.prompt || "";
-  resizeInput();
-  input.focus();
+suggestions.querySelectorAll("button[data-prompt]").forEach((button) => {
+  button.addEventListener("click", () => {
+    input.value = button.dataset.prompt || "";
+    resizeInput();
+    void sendMessage();
+  });
 });
 
-resetButton.addEventListener("click", () => {
-  if (isStreaming) return;
-  conversation.length = 0;
+function resetConversation() {
+  requestGeneration += 1;
+  activeController?.abort();
+  activeController = null;
+  setBusy(false);
+  localStorage.removeItem(conversationIdKey);
   messageList.querySelectorAll(".message:not(.welcome-message)").forEach((message) => message.remove());
   suggestions.hidden = false;
   input.value = "";
   resizeInput();
   input.focus();
-});
+}
+
+resetButtons.forEach((button) => button.addEventListener("click", resetConversation));
 
 input.focus();

@@ -52,6 +52,7 @@
           <a class="docs-link" href="/docs" target="_blank" rel="noreferrer">
             API 文档 <span aria-hidden="true">↗</span>
           </a>
+          <button id="reset-chat-mobile" class="mobile-reset-button" type="button">新对话</button>
         </header>
 
         <div id="message-list" class="message-list" aria-live="polite">
@@ -68,9 +69,9 @@
         </div>
 
         <div id="suggestions" class="suggestions" aria-label="快捷问题">
-          <button type="button" data-prompt="我的包裹怎么还没到？">查询物流</button>
-          <button type="button" data-prompt="收到的商品有问题，怎么申请退货？">申请退货</button>
-          <button type="button" data-prompt="耳机有杂音，我该怎么办？">商品故障</button>
+          <button type="button" data-prompt="订单 1001 的物流到哪了">订单 1001 的物流到哪了</button>
+          <button type="button" data-prompt="退货政策是什么">退货政策是什么</button>
+          <button type="button" data-prompt="邮费是多少">邮费是多少</button>
         </div>
 
         <form id="chat-form" class="composer">
@@ -97,6 +98,6 @@
       </section>
     </main>
 
-    <script src="/static/chat.js" defer></script>
+    <script src="/static/chat.js?v=3" defer></script>
   </body>
 </html>

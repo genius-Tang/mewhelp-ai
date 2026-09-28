@@ -109,3 +109,6 @@ def test_app_serves_chat_page_and_static_assets() -> None:
     assert page.status_code == 200
     assert "MewHelp 智能客服" in page.text
     assert 'fetch("/chat/stream"' in script.text
+    assert 'user_id: userId, message, conversation_id: conversationId' in script.text
+    assert "messages }" not in script.text
+    assert 'mewhelp_conversation_id' in script.text
